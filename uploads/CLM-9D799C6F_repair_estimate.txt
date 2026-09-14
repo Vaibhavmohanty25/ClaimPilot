@@ -1,0 +1,27 @@
+ABC MOTORS
+
+Vehicle:
+Hyundai Creta
+
+Registration:
+PB10AB1234
+
+REPAIR ESTIMATE
+
+Front bumper replacement:
+INR 28,000
+
+Left headlamp assembly:
+INR 18,000
+
+Bonnet repair:
+INR 12,000
+
+Rear bumper replacement:
+INR 16,000
+
+Labour charges:
+INR 8,000
+
+TOTAL:
+INR 82,000
