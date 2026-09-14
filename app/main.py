@@ -34,10 +34,6 @@ def root():
 async def process_claim(
     files: list[UploadFile] = File(...)
 ):
-    """
-    Accept multiple claim documents using multipart/form-data.
-    """
-
     if not files:
         raise HTTPException(
             status_code=400,
@@ -47,9 +43,9 @@ async def process_claim(
     claim_id = f"CLM-{uuid4().hex[:8].upper()}"
 
     document_sections = []
+    processed_files = []
 
     for uploaded_file in files:
-
         if not uploaded_file.filename:
             continue
 
@@ -60,7 +56,6 @@ async def process_claim(
             )
 
             file_bytes = await uploaded_file.read()
-
             file_path.write_bytes(file_bytes)
 
             extracted_text = load_document(
@@ -75,6 +70,10 @@ DOCUMENT: {uploaded_file.filename}
 
 {extracted_text}
 """
+            )
+
+            processed_files.append(
+                uploaded_file.filename
             )
 
         except ValueError as error:
@@ -117,20 +116,34 @@ DOCUMENT: {uploaded_file.filename}
         )
 
     except Exception as error:
+        print(
+            "CLAIM PROCESSING ERROR:",
+            repr(error)
+        )
+
         raise HTTPException(
             status_code=500,
-            detail=f"Claim processing failed: {error}",
+            detail=str(error),
         )
 
     return {
-        "claim_id": claim_id,
-        "status": "reconstruction_complete",
-        "files_processed": [
-            file.filename
-            for file in files
-            if file.filename
-        ],
-        "reconstruction": result.get(
-            "claim_reconstruction"
-        ),
-    }
+    "claim_id": claim_id,
+    "status": "evidence_analysis_complete",
+    "files_processed": processed_files,
+
+    "reconstruction": result.get(
+        "claim_reconstruction"
+    ),
+
+    "coverage_analysis": result.get(
+        "coverage_analysis"
+    ),
+
+    "policy_context": result.get(
+        "policy_context"
+    ),
+
+    "evidence_analysis": result.get(
+        "evidence_analysis"
+    ),
+}
