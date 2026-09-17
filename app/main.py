@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from app.graph.claims_graph import claim_graph
 from app.services.document_loader import load_document
@@ -15,10 +15,7 @@ app = FastAPI(
 
 
 UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/")
@@ -26,7 +23,7 @@ def root():
     return {
         "project": "ClaimPilot",
         "status": "running",
-        "phase": "1A",
+        "phase": "1D",
     }
 
 
@@ -56,6 +53,7 @@ async def process_claim(
             )
 
             file_bytes = await uploaded_file.read()
+
             file_path.write_bytes(file_bytes)
 
             extracted_text = load_document(
@@ -118,7 +116,7 @@ DOCUMENT: {uploaded_file.filename}
     except Exception as error:
         print(
             "CLAIM PROCESSING ERROR:",
-            repr(error)
+            repr(error),
         )
 
         raise HTTPException(
@@ -127,23 +125,27 @@ DOCUMENT: {uploaded_file.filename}
         )
 
     return {
-    "claim_id": claim_id,
-    "status": "evidence_analysis_complete",
-    "files_processed": processed_files,
+        "claim_id": claim_id,
+        "status": "missing_information_analysis_complete",
+        "files_processed": processed_files,
 
-    "reconstruction": result.get(
-        "claim_reconstruction"
-    ),
+        "reconstruction": result.get(
+            "claim_reconstruction"
+        ),
 
-    "coverage_analysis": result.get(
-        "coverage_analysis"
-    ),
+        "coverage_analysis": result.get(
+            "coverage_analysis"
+        ),
 
-    "policy_context": result.get(
-        "policy_context"
-    ),
+        "policy_context": result.get(
+            "policy_context"
+        ),
 
-    "evidence_analysis": result.get(
-        "evidence_analysis"
-    ),
-}
+        "evidence_analysis": result.get(
+            "evidence_analysis"
+        ),
+
+        "missing_information": result.get(
+            "missing_information"
+        ),
+    }

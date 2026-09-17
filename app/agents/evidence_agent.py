@@ -59,7 +59,14 @@ def analyze_evidence(
     except json.JSONDecodeError:
         return {
             "evidence_status": "WEAK",
-            "error": "Evidence Agent returned invalid JSON.",
-            "raw_response": response,
+            "evidence_confidence": 0.0,
+            "contradictions": [],
+            "unsupported_claim_items": [],
+            "supported_claim_items": [],
+            "missing_evidence": [],
+            "risk_flags": [
+                "Evidence Agent returned invalid JSON."
+            ],
             "requires_human_review": True,
+            "raw_response": response,
         }

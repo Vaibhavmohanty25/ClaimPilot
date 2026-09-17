@@ -1,9 +1,26 @@
 from typing import TypedDict
 
-from langgraph.graph import StateGraph, START, END
-from app.agents.evidence_agent import analyze_evidence
-from app.agents.claim_reconstruction import reconstruct_claim
-from app.agents.policy_agent import analyze_policy
+from langgraph.graph import (
+    StateGraph,
+    START,
+    END,
+)
+
+from app.agents.claim_reconstruction import (
+    reconstruct_claim,
+)
+
+from app.agents.policy_agent import (
+    analyze_policy,
+)
+
+from app.agents.evidence_agent import (
+    analyze_evidence,
+)
+
+from app.agents.missing_info_agent import (
+    analyze_missing_information,
+)
 
 
 class ClaimState(TypedDict, total=False):
@@ -16,15 +33,19 @@ class ClaimState(TypedDict, total=False):
     coverage_analysis: dict
 
     evidence_analysis: dict
-    missing_information: list
+
+    missing_information: dict
 
     adjudication: dict
+
     critic_feedback: dict
 
     final_assessment: dict
 
 
-def reconstruction_node(state: ClaimState):
+def reconstruction_node(
+    state: ClaimState
+):
     result = reconstruct_claim(
         state["raw_documents"]
     )
@@ -34,21 +55,25 @@ def reconstruction_node(state: ClaimState):
     }
 
 
-def policy_node(state: ClaimState):
+def policy_node(
+    state: ClaimState
+):
     result = analyze_policy(
         state["claim_reconstruction"]
     )
 
     return {
-        "policy_context": result["policy_context"],
-        "coverage_analysis": result["coverage_analysis"],
+        "policy_context":
+            result["policy_context"],
+
+        "coverage_analysis":
+            result["coverage_analysis"],
     }
 
 
 def evidence_node(
     state: ClaimState
 ):
-
     result = analyze_evidence(
         state["claim_reconstruction"],
         state["coverage_analysis"],
@@ -58,8 +83,22 @@ def evidence_node(
         "evidence_analysis": result
     }
 
-def build_claim_graph():
 
+def missing_information_node(
+    state: ClaimState
+):
+    result = analyze_missing_information(
+        state["claim_reconstruction"],
+        state["coverage_analysis"],
+        state["evidence_analysis"],
+    )
+
+    return {
+        "missing_information": result
+    }
+
+
+def build_claim_graph():
     builder = StateGraph(
         ClaimState
     )
@@ -79,6 +118,11 @@ def build_claim_graph():
         evidence_node,
     )
 
+    builder.add_node(
+        "missing_information",
+        missing_information_node,
+    )
+
     builder.add_edge(
         START,
         "reconstruct_claim",
@@ -96,6 +140,11 @@ def build_claim_graph():
 
     builder.add_edge(
         "evidence_analysis",
+        "missing_information",
+    )
+
+    builder.add_edge(
+        "missing_information",
         END,
     )
 

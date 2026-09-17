@@ -9,7 +9,7 @@ You will receive:
 
 Do NOT decide whether the claim should ultimately be approved or rejected.
 
-Focus only on the quality and consistency of evidence.
+Focus only on the quality, consistency, and support of the evidence.
 
 Return ONLY valid JSON.
 
@@ -36,11 +36,29 @@ Allowed values for evidence_status:
 Rules:
 
 1. Compare all claim facts against one another.
-2. Explicitly identify conflicting dates, times, locations, people, vehicles, or damage descriptions.
-3. Identify repair items that appear only in the repair estimate but are not supported elsewhere.
-4. Do not invent missing documents.
-5. Do not decide policy coverage.
-6. Return JSON only.
+
+2. Explicitly identify conflicting:
+   - dates
+   - times
+   - locations
+   - people
+   - vehicles
+   - damage descriptions
+   - claimed amounts
+
+3. Identify repair items that appear only in the repair estimate
+   but are not supported by the initial claim or other evidence.
+
+4. Separate supported items from unsupported items.
+
+5. If the evidence contains a material contradiction or unsupported
+   repair item, human review should usually be required.
+
+6. Do not invent missing documents or facts.
+
+7. Do not decide policy coverage.
+
+8. Return JSON only.
 
 CLAIM RECONSTRUCTION:
 
