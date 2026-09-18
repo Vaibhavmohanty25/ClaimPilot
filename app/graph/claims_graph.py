@@ -22,6 +22,14 @@ from app.agents.missing_info_agent import (
     analyze_missing_information,
 )
 
+from app.agents.adjudication_agent import (
+    adjudicate_claim,
+)
+
+from app.agents.critic_agent import (
+    critique_adjudication,
+)
+
 
 class ClaimState(TypedDict, total=False):
     claim_id: str
@@ -97,6 +105,36 @@ def missing_information_node(
         "missing_information": result
     }
 
+def adjudication_node(
+    state: ClaimState
+):
+    result = adjudicate_claim(
+        state["claim_reconstruction"],
+        state["coverage_analysis"],
+        state["evidence_analysis"],
+        state["missing_information"],
+    )
+
+    return {
+        "adjudication": result
+    }
+
+def critic_node(
+    state: ClaimState
+):
+    result = critique_adjudication(
+        state["claim_reconstruction"],
+        state["coverage_analysis"],
+        state["evidence_analysis"],
+        state["missing_information"],
+        state["adjudication"],
+    )
+
+    return {
+        "critic_feedback": result
+    }
+
+
 
 def build_claim_graph():
     builder = StateGraph(
@@ -143,8 +181,28 @@ def build_claim_graph():
         "missing_information",
     )
 
+    builder.add_node(
+    "adjudication",
+    adjudication_node,
+    )
+
     builder.add_edge(
         "missing_information",
+        "adjudication",
+    )
+
+    builder.add_node(
+    "critic",
+    critic_node,
+    )
+
+    builder.add_edge(
+        "adjudication",
+        "critic",
+    )
+
+    builder.add_edge(
+        "critic",
         END,
     )
 

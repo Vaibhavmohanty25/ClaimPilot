@@ -15,7 +15,10 @@ app = FastAPI(
 
 
 UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
 
 @app.get("/")
@@ -23,7 +26,7 @@ def root():
     return {
         "project": "ClaimPilot",
         "status": "running",
-        "phase": "1D",
+        "phase": "1F",
     }
 
 
@@ -54,7 +57,9 @@ async def process_claim(
 
             file_bytes = await uploaded_file.read()
 
-            file_path.write_bytes(file_bytes)
+            file_path.write_bytes(
+                file_bytes
+            )
 
             extracted_text = load_document(
                 str(file_path)
@@ -126,7 +131,7 @@ DOCUMENT: {uploaded_file.filename}
 
     return {
         "claim_id": claim_id,
-        "status": "missing_information_analysis_complete",
+        "status": "critic_verification_complete",
         "files_processed": processed_files,
 
         "reconstruction": result.get(
@@ -147,5 +152,13 @@ DOCUMENT: {uploaded_file.filename}
 
         "missing_information": result.get(
             "missing_information"
+        ),
+
+        "adjudication": result.get(
+            "adjudication"
+        ),
+
+        "critic_feedback": result.get(
+            "critic_feedback"
         ),
     }

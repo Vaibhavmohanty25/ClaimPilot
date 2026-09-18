@@ -2,56 +2,27 @@ import json
 from pathlib import Path
 
 from app.services.llm import generate_text
-from app.rag.retriever import (
-    retrieve_policy_context,
-)
+from app.rag.retriever import retrieve_policy_context
 
 
-BASE_DIR = Path(
-    __file__
-).resolve().parent.parent
-
-PROMPT_PATH = (
-    BASE_DIR
-    / "prompts"
-    / "policy_reasoning.txt"
-)
+BASE_DIR = Path(__file__).resolve().parent.parent
+PROMPT_PATH = BASE_DIR / "prompts" / "policy_reasoning.txt"
 
 
 def load_prompt() -> str:
-
-    return PROMPT_PATH.read_text(
-        encoding="utf-8"
-    )
+    return PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def build_policy_query(
-    claim_reconstruction: dict
-) -> str:
-
-    summary = (
-        claim_reconstruction.get(
-            "incident_summary",
-            ""
-        )
-    )
-
-    damages = (
-        claim_reconstruction.get(
-            "reported_damage",
-            []
-        )
-    )
-
-    contradictions = (
-        claim_reconstruction.get(
-            "initial_contradictions",
-            []
-        )
+def build_coverage_query(claim_reconstruction: dict) -> str:
+    summary = claim_reconstruction.get("incident_summary", "")
+    damages = claim_reconstruction.get("reported_damage", [])
+    contradictions = claim_reconstruction.get(
+        "initial_contradictions",
+        [],
     )
 
     return f"""
-Insurance coverage for this claim:
+Motor insurance coverage analysis.
 
 Incident:
 {summary}
@@ -59,33 +30,91 @@ Incident:
 Reported damage:
 {damages}
 
-Contradictions:
+Known contradictions:
 {contradictions}
 
-Retrieve relevant policy clauses regarding:
-collision coverage,
-own damage,
-deductibles,
-claim evidence,
-exclusions,
-and unsupported repair items.
+Retrieve policy sections relevant to:
+
+- accidental collision
+- own damage coverage
+- collision damage
+- exclusions
+- repair assessment
+- claim documentation
+- unsupported repair items
 """
 
 
-def analyze_policy(
-    claim_reconstruction: dict
-) -> dict:
+def build_deductible_query(claim_reconstruction: dict) -> str:
+    claimed_amount = claim_reconstruction.get("claimed_amount")
 
-    query = build_policy_query(
-        claim_reconstruction
+    return f"""
+Motor insurance deductible and settlement analysis.
+
+Claimed amount:
+{claimed_amount}
+
+Retrieve policy sections specifically related to:
+
+- compulsory deductible
+- deductible amount
+- policy excess
+- compulsory excess
+- settlement deduction
+- payable amount
+- own damage claim deductible
+"""
+
+
+def merge_policy_contexts(*groups: list) -> list:
+    merged = []
+    seen = set()
+
+    for group in groups:
+        for item in group:
+            text = item.get("text", "").strip()
+
+            if not text:
+                continue
+
+            if text in seen:
+                continue
+
+            seen.add(text)
+            merged.append(item)
+
+    return merged
+
+
+def analyze_policy(claim_reconstruction: dict) -> dict:
+    # Coverage retrieval
+    coverage_context = retrieve_policy_context(
+        query=build_coverage_query(
+            claim_reconstruction
+        ),
+        limit=5,
     )
 
-    policy_context = (
-        retrieve_policy_context(
-            query=query,
-            limit=4,
+    # Dedicated deductible retrieval
+    deductible_context = retrieve_policy_context(
+        query=build_deductible_query(
+            claim_reconstruction
+        ),
+        limit=6,
+    )
+
+    policy_context = merge_policy_contexts(
+        deductible_context,
+        coverage_context,
+    )
+
+    # Debug so we can confirm Section 5 is actually passed downstream
+    print("\n=== POLICY CONTEXT ===")
+    for item in policy_context:
+        print(
+            item.get("text", "")[:120],
+            "\n"
         )
-    )
 
     prompt_template = load_prompt()
 
@@ -107,9 +136,7 @@ def analyze_policy(
         )
     )
 
-    response = generate_text(
-        prompt
-    )
+    response = generate_text(prompt)
 
     cleaned = (
         response
@@ -119,28 +146,25 @@ def analyze_policy(
     )
 
     try:
-
-        analysis = json.loads(
-            cleaned
-        )
+        analysis = json.loads(cleaned)
 
     except json.JSONDecodeError:
-
         analysis = {
-            "coverage_status":
-                "REQUIRES_REVIEW",
-
-            "error":
-                "Policy agent returned invalid JSON.",
-
-            "raw_response":
-                response,
+            "coverage_status": "REQUIRES_REVIEW",
+            "coverage_confidence": 0.0,
+            "reasoning": [],
+            "applicable_deductible": None,
+            "exclusions_triggered": [],
+            "policy_evidence": [],
+            "requires_human_review": True,
+            "error": (
+                "Policy Reasoning Agent "
+                "returned invalid JSON."
+            ),
+            "raw_response": response,
         }
 
     return {
-        "policy_context":
-            policy_context,
-
-        "coverage_analysis":
-            analysis,
+        "policy_context": policy_context,
+        "coverage_analysis": analysis,
     }

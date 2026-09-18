@@ -1,0 +1,21 @@
+ABC MOTORS
+
+Vehicle:
+Hyundai Creta
+
+Registration Number:
+PB10AB1234
+
+REPAIR ESTIMATE
+
+Front bumper replacement:
+INR 30,000
+
+Left headlamp assembly:
+INR 18,000
+
+Labour charges:
+INR 6,000
+
+TOTAL:
+INR 54,000
