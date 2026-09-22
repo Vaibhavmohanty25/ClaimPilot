@@ -25,7 +25,7 @@ def extract_text_from_image(
 
     if not path.exists():
         raise FileNotFoundError(
-            f"Image not found: {image_path}"
+            "Image not found."
         )
 
     reader = get_reader()

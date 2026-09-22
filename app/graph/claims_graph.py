@@ -1,4 +1,5 @@
 from typing import TypedDict
+from app.services.observability import observed_node
 
 from langgraph.graph import (
     StateGraph,
@@ -29,11 +30,17 @@ from app.agents.adjudication_agent import (
 from app.agents.critic_agent import (
     critique_adjudication,
 )
+from app.agents.vision_agent import analyze_visual_evidence
+from app.agents.multimodal_evidence_agent import (
+    analyze_cross_modal_evidence,
+)
 
 
 class ClaimState(TypedDict, total=False):
     claim_id: str
     raw_documents: str
+    document_metadata: list
+    image_files: list
 
     claim_reconstruction: dict
 
@@ -41,6 +48,8 @@ class ClaimState(TypedDict, total=False):
     coverage_analysis: dict
 
     evidence_analysis: dict
+    visual_analysis: dict
+    cross_modal_analysis: dict
 
     missing_information: dict
 
@@ -51,6 +60,7 @@ class ClaimState(TypedDict, total=False):
     final_assessment: dict
 
 
+@observed_node
 def reconstruction_node(
     state: ClaimState
 ):
@@ -63,6 +73,7 @@ def reconstruction_node(
     }
 
 
+@observed_node
 def policy_node(
     state: ClaimState
 ):
@@ -79,6 +90,18 @@ def policy_node(
     }
 
 
+@observed_node
+def visual_node(
+    state: ClaimState,
+):
+    return {
+        "visual_analysis": analyze_visual_evidence(
+            state.get("image_files", [])
+        )
+    }
+
+
+@observed_node
 def evidence_node(
     state: ClaimState
 ):
@@ -92,6 +115,7 @@ def evidence_node(
     }
 
 
+@observed_node
 def missing_information_node(
     state: ClaimState
 ):
@@ -99,12 +123,27 @@ def missing_information_node(
         state["claim_reconstruction"],
         state["coverage_analysis"],
         state["evidence_analysis"],
+        state.get("cross_modal_analysis"),
     )
 
     return {
         "missing_information": result
     }
 
+
+@observed_node
+def cross_modal_node(
+    state: ClaimState,
+):
+    return {
+        "cross_modal_analysis": analyze_cross_modal_evidence(
+            state["claim_reconstruction"],
+            state["evidence_analysis"],
+            state.get("visual_analysis", {}),
+        )
+    }
+
+@observed_node
 def adjudication_node(
     state: ClaimState
 ):
@@ -113,12 +152,14 @@ def adjudication_node(
         state["coverage_analysis"],
         state["evidence_analysis"],
         state["missing_information"],
+        state.get("cross_modal_analysis"),
     )
 
     return {
         "adjudication": result
     }
 
+@observed_node
 def critic_node(
     state: ClaimState
 ):
@@ -128,6 +169,7 @@ def critic_node(
         state["evidence_analysis"],
         state["missing_information"],
         state["adjudication"],
+        state.get("cross_modal_analysis"),
     )
 
     return {
@@ -152,6 +194,11 @@ def build_claim_graph():
     )
 
     builder.add_node(
+        "visual_analysis",
+        visual_node,
+    )
+
+    builder.add_node(
         "evidence_analysis",
         evidence_node,
     )
@@ -168,6 +215,11 @@ def build_claim_graph():
 
     builder.add_edge(
         "reconstruct_claim",
+        "visual_analysis",
+    )
+
+    builder.add_edge(
+        "visual_analysis",
         "policy_reasoning",
     )
 
@@ -178,6 +230,16 @@ def build_claim_graph():
 
     builder.add_edge(
         "evidence_analysis",
+        "cross_modal_evidence",
+    )
+
+    builder.add_node(
+        "cross_modal_evidence",
+        cross_modal_node,
+    )
+
+    builder.add_edge(
+        "cross_modal_evidence",
         "missing_information",
     )
 

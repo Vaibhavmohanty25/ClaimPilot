@@ -7,6 +7,7 @@ You will receive:
 1. Claim reconstruction
 2. Policy coverage analysis
 3. Evidence analysis
+4. Cross-modal evidence analysis
 
 Your goal is to identify the MINIMUM SUFFICIENT information required to continue processing the claim.
 
@@ -175,6 +176,10 @@ must follow the rules above.
 
 15. Return JSON only.
 
+16. A visually unsupported item may require clarification or review. A region
+that is not visible is not evidence that it is intact; treat it as optional
+unless other evidence makes it material.
+
 
 CLAIM RECONSTRUCTION:
 
@@ -189,3 +194,7 @@ POLICY ANALYSIS:
 EVIDENCE ANALYSIS:
 
 {evidence_analysis}
+
+CROSS-MODAL EVIDENCE ANALYSIS:
+
+{cross_modal_analysis}

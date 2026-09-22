@@ -9,6 +9,7 @@ You will receive:
 3. Evidence analysis
 4. Missing information analysis
 5. Preliminary adjudication
+6. Cross-modal evidence analysis
 
 Each agent has a different responsibility.
 
@@ -83,6 +84,17 @@ Rules:
 
 12. Return JSON only.
 
+13. Verify that the adjudication does not turn `unverifiable_items` or regions
+listed as not visible into a conclusion that damage did not exist.
+
+14. If a region is clearly visible and intact while a repair is approved,
+verify that it is disputed, adjusted, or escalated unless a grounded
+explanation resolves the contradiction.
+
+15. Verify that any recommended payable amount can be grounded in selected
+priced supported repairs less the policy deductible. Policy coverage remains
+independent from visual evidence.
+
 CLAIM RECONSTRUCTION:
 
 {claim_reconstruction}
@@ -102,3 +114,7 @@ MISSING INFORMATION ANALYSIS:
 PRELIMINARY ADJUDICATION:
 
 {adjudication}
+
+CROSS-MODAL EVIDENCE ANALYSIS:
+
+{cross_modal_analysis}

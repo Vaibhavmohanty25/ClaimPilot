@@ -9,3 +9,6 @@ langchain-community
 qdrant-client
 langchain-qdrant
 pymupdf
+sentence-transformers
+easyocr
+Pillow

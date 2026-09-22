@@ -1,1 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.venv/
+
+# Environment secrets
 .env
+
+# Runtime uploads
+uploads/
+
+# Local Qdrant storage
+.qdrant/
+
+# Test/runtime caches
+.pytest_cache/
+.coverage
+htmlcov/

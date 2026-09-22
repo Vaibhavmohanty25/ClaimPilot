@@ -10,6 +10,7 @@ from app.services.ocr_service import (
 
 from app.multimodal.file_classifier import (
     classify_file,
+    IMAGE_EXTENSIONS,
 )
 
 
@@ -204,7 +205,7 @@ def load_image(
     return {
         "filename": path.name,
         "file_type": "image",
-        "content_type": "image_document",
+        "content_type": "document_image",
         "extraction_method": "ocr",
         "pages": 1,
         "image_width": width,
@@ -216,6 +217,10 @@ def load_image(
 def load_document(
     file_path: str
 ) -> dict:
+    # Explicit document-loader calls already select OCR; do not repeat the
+    # routing OCR probe here. The API classifies images before choosing this path.
+    if Path(file_path).suffix.lower() in IMAGE_EXTENSIONS:
+        return load_image(file_path)
     classification = (
         classify_file(
             file_path
@@ -235,11 +240,6 @@ def load_document(
 
     if file_type == "pdf":
         return load_pdf(
-            file_path
-        )
-
-    if file_type == "image":
-        return load_image(
             file_path
         )
 

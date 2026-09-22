@@ -8,6 +8,7 @@ You will receive:
 2. Policy coverage analysis
 3. Evidence analysis
 4. Missing information analysis
+5. Cross-modal evidence analysis
 
 You must NOT invent facts, policy terms, claim amounts, or evidence.
 
@@ -23,6 +24,7 @@ Use this structure:
     "adjudication_confidence": 0.0,
     "coverage_position": "",
     "supported_damage_items": [],
+    "supported_repair_items": [],
     "disputed_damage_items": [],
     "recommended_payable_amount": null,
     "reasoning": [],
@@ -69,6 +71,15 @@ Rules:
 
 10. Return JSON only.
 
+11. Cross-modal evidence is evidence quality, not policy coverage. Respect
+visually unsupported items, but do not treat a `not visible` region or an
+`unverifiable_items` entry as proof of no damage.
+
+12. When selecting priced supported repairs, populate `supported_repair_items`
+with only exact repair-estimate items and their stated numeric amounts. The
+system, not you, will calculate payable arithmetic. If any selected item's
+price is unknown, use null for its amount.
+
 CLAIM RECONSTRUCTION:
 
 {claim_reconstruction}
@@ -84,3 +95,7 @@ EVIDENCE ANALYSIS:
 MISSING INFORMATION ANALYSIS:
 
 {missing_information}
+
+CROSS-MODAL EVIDENCE ANALYSIS:
+
+{cross_modal_analysis}

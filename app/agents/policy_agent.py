@@ -2,9 +2,6 @@ import json
 from pathlib import Path
 
 from app.services.llm import generate_text
-from app.rag.retriever import retrieve_policy_context
-
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROMPT_PATH = BASE_DIR / "prompts" / "policy_reasoning.txt"
 
@@ -87,6 +84,10 @@ def merge_policy_contexts(*groups: list) -> list:
 
 
 def analyze_policy(claim_reconstruction: dict) -> dict:
+    # Delay local embedding-model initialization until a claim actually needs
+    # policy retrieval. This keeps graph/API imports side-effect free.
+    from app.rag.retriever import retrieve_policy_context
+
     # Coverage retrieval
     coverage_context = retrieve_policy_context(
         query=build_coverage_query(
@@ -107,14 +108,6 @@ def analyze_policy(claim_reconstruction: dict) -> dict:
         deductible_context,
         coverage_context,
     )
-
-    # Debug so we can confirm Section 5 is actually passed downstream
-    print("\n=== POLICY CONTEXT ===")
-    for item in policy_context:
-        print(
-            item.get("text", "")[:120],
-            "\n"
-        )
 
     prompt_template = load_prompt()
 

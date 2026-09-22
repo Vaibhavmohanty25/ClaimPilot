@@ -1,10 +1,15 @@
 from pathlib import Path
 from uuid import uuid4
+from time import perf_counter
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from app.graph.claims_graph import claim_graph
 from app.services.document_loader import load_document
+from app.multimodal.file_classifier import classify_file
+from app.services.privacy import safe_filename as sanitize_filename, public_response
+from app.services.observability import log_event
+from app.services.vision_llm import MAX_VISION_IMAGES
 
 
 app = FastAPI(
@@ -13,7 +18,7 @@ app = FastAPI(
         "Agentic GenAI platform for insurance claim assessment "
         "with multimodal document intelligence."
     ),
-    version="0.2.0",
+    version="0.2.1",
 )
 
 
@@ -29,7 +34,7 @@ def root():
     return {
         "project": "ClaimPilot",
         "status": "running",
-        "phase": "2A",
+        "phase": "2",
     }
 
 
@@ -50,22 +55,60 @@ async def process_claim(
     document_sections = []
     processed_files = []
     document_metadata = []
+    image_files = []
+    private_paths = []
+    used_filenames = set()
 
     for uploaded_file in files:
         if not uploaded_file.filename:
+            await uploaded_file.close()
             continue
 
         try:
+            safe_filename = sanitize_filename(uploaded_file.filename)
+            original_filename = safe_filename
+            suffix = 2
+            while safe_filename.casefold() in used_filenames:
+                safe_filename = f"{suffix}-{original_filename}"
+                suffix += 1
+            used_filenames.add(safe_filename.casefold())
             file_path = (
                 UPLOAD_DIR
-                / f"{claim_id}_{uploaded_file.filename}"
+                / f"{claim_id}_{uuid4().hex[:8]}_{safe_filename}"
             )
+            private_paths.extend([str(file_path), str(file_path.resolve()), file_path.name])
 
             file_bytes = await uploaded_file.read()
 
             file_path.write_bytes(
                 file_bytes
             )
+
+            start = perf_counter()
+            classification = classify_file(str(file_path))
+
+            if classification["content_type"] in ("damage_photo", "unknown_image"):
+                image_files.append(
+                    {
+                        "filename": safe_filename,
+                        "path": str(file_path),
+                        "classification": classification["content_type"],
+                    }
+                )
+                processed_files.append(safe_filename)
+                document_metadata.append(
+                    {
+                        "filename": safe_filename,
+                        "file_type": "image",
+                        "content_type": classification["content_type"],
+                        "classification_confidence": classification.get("classification_confidence", 0),
+                        "extraction_method": "vision_pending",
+                        "pages": 1,
+                    }
+                )
+                log_event("image_routing", True, claim_id=claim_id, extraction_method="vision_pending",
+                          image_count=1, duration_ms=round((perf_counter() - start) * 1000, 2))
+                continue
 
             # --------------------------------------------------
             # Phase 2A document intelligence
@@ -94,7 +137,7 @@ async def process_claim(
             document_sections.append(
                 f"""
 ==================================================
-DOCUMENT: {uploaded_file.filename}
+DOCUMENT: {safe_filename}
 FILE TYPE: {document_result.get("file_type")}
 CONTENT TYPE: {document_result.get("content_type")}
 EXTRACTION METHOD: {document_result.get("extraction_method")}
@@ -105,7 +148,7 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             )
 
             processed_files.append(
-                uploaded_file.filename
+                safe_filename
             )
 
             # --------------------------------------------------
@@ -113,9 +156,7 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             # --------------------------------------------------
 
             metadata = {
-                "filename": document_result.get(
-                    "filename"
-                ),
+                "filename": safe_filename,
                 "file_type": document_result.get(
                     "file_type"
                 ),
@@ -151,45 +192,42 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             if document_result.get(
                 "page_details"
             ):
-                metadata[
-                    "page_details"
-                ] = document_result.get(
-                    "page_details"
-                )
+                metadata["page_details"] = [
+                    {key: page.get(key) for key in ("page_number", "extraction_method")}
+                    for page in document_result["page_details"]
+                ]
 
             document_metadata.append(
                 metadata
             )
+            log_event("document_extraction", True, claim_id=claim_id, extraction_method=metadata["extraction_method"],
+                      duration_ms=round((perf_counter() - start) * 1000, 2))
 
-        except ValueError as error:
+        except ValueError:
+            log_event("document_extraction", False, claim_id=claim_id, error_code="unsupported_or_unreadable_file")
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Unsupported or unreadable file "
-                    f"'{uploaded_file.filename}': "
-                    f"{error}"
+                    f"'{safe_filename}'."
                 ),
             )
 
-        except Exception as error:
-            print(
-                "DOCUMENT PROCESSING ERROR:",
-                repr(error),
-            )
+        except Exception:
+            log_event("document_extraction", False, claim_id=claim_id, error_code="document_processing_failed")
 
             raise HTTPException(
                 status_code=500,
                 detail=(
                     f"Failed to process "
-                    f"'{uploaded_file.filename}': "
-                    f"{error}"
+                    f"'{safe_filename}'."
                 ),
             )
 
         finally:
             await uploaded_file.close()
 
-    if not document_sections:
+    if not document_sections and not image_files:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -198,9 +236,15 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             ),
         )
 
-    raw_documents = "\n".join(
-        document_sections
-    )
+    raw_documents = "\n".join(document_sections)
+    if not raw_documents:
+        raw_documents = (
+            "No textual claim documents were supplied. "
+            "Do not infer incident facts from this placeholder."
+        )
+
+    if len(image_files) > MAX_VISION_IMAGES:
+        raise HTTPException(status_code=400, detail="Vision limit exceeded: at most 3 images per claim.")
 
     # ------------------------------------------------------
     # Existing Phase 1 LangGraph pipeline
@@ -211,28 +255,27 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             {
                 "claim_id": claim_id,
                 "raw_documents": raw_documents,
+                "document_metadata": document_metadata,
+                "image_files": image_files,
             }
         )
 
-    except Exception as error:
-        print(
-            "CLAIM PROCESSING ERROR:",
-            repr(error),
-        )
+    except Exception:
+        log_event("claim_processing", False, claim_id=claim_id, error_code="claim_processing_failed")
 
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Claim processing failed. Review server stage logs and provider configuration.",
         )
 
     # ------------------------------------------------------
     # Final response
     # ------------------------------------------------------
 
-    return {
+    return public_response({
         "claim_id": claim_id,
         "status": "critic_verification_complete",
-        "phase": "2A",
+        "phase": "2",
 
         "files_processed": processed_files,
 
@@ -244,6 +287,10 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
         # Existing Phase 1 outputs
         "reconstruction": result.get(
             "claim_reconstruction"
+        ),
+
+        "visual_analysis": result.get(
+            "visual_analysis"
         ),
 
         "coverage_analysis": result.get(
@@ -258,6 +305,10 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             "evidence_analysis"
         ),
 
+        "cross_modal_analysis": result.get(
+            "cross_modal_analysis"
+        ),
+
         "missing_information": result.get(
             "missing_information"
         ),
@@ -269,4 +320,4 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
         "critic_feedback": result.get(
             "critic_feedback"
         ),
-    }
+    }, private_paths)
