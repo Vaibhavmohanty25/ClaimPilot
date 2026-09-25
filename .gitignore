@@ -1,34 +1,21 @@
 # Python
-__pycache__/
-*.py[cod]
-
-# Virtual environment
 venv/
 .venv/
-
-# Environment secrets
+__pycache__/
+*.py[cod]
 .env
-
-# Runtime uploads
-uploads/
-
-# Local Qdrant storage
 .qdrant/
-
-# Test/runtime caches
+uploads/
 .pytest_cache/
 .coverage
 htmlcov/
 
-
-
-.env
-venv/
-.venv/
+# Frontend
 node_modules/
 frontend/node_modules/
 frontend/dist/
-__pycache__/
-*.pyc
-.qdrant/
-uploads/
+frontend/.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
