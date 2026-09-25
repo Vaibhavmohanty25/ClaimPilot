@@ -1333,5 +1333,6 @@ It is not intended to independently make legally binding insurance decisions wit
 # Author
 
 **Vaibhav Mohanty**
-
+**BTECH IN COMPUTER SCIENCE ENGINEERING**
+**ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING**
 ClaimPilot — Autonomous Insurance Claims Intelligence
