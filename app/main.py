@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 from time import perf_counter
-
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from app.graph.claims_graph import claim_graph
@@ -19,6 +19,16 @@ app = FastAPI(
         "with multimodal document intelligence."
     ),
     version="0.2.1",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
