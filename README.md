@@ -1029,7 +1029,7 @@ app.add_middleware(
 )
 ```
 
-For deployment, add the production frontend URL.
+For deployment, set `FRONTEND_ORIGIN` to the production frontend origin.
 
 ---
 
@@ -1129,6 +1129,8 @@ VERIFIED
 
 # Deployment
 
+See [deployment instructions](docs/deployment.md) for the exact Vercel and container-host settings, environment variables, and local Qdrant storage requirement.
+
 ## Frontend
 
 The React frontend can be deployed on Vercel.
@@ -1190,7 +1192,7 @@ Container Host
    ↓
 FastAPI + LangGraph
 
-Qdrant Cloud
+Persistent local Qdrant volume
    ↓
 Policy Vector Database
 
