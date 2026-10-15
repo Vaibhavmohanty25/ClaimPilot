@@ -1,0 +1,20 @@
+# The full OCR/RAG workload can exceed the free instance's 512 MB RAM.
+# Change the plan only after approving a suitable paid memory budget.
+services:
+  - type: web
+    name: claimpilot-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeployTrigger: "off"
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FRONTEND_ORIGIN
+        value: https://claimpilot-five.vercel.app
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_VISION_MODEL
+        value: qwen/qwen3.8-27b

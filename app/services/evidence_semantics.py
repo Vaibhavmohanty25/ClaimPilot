@@ -26,6 +26,8 @@ NON_VISUAL_TERMS = {
     "towing fees",
     "administrative fee",
     "administrative fees",
+    "administrative charge",
+    "administrative charges",
     "service charge",
     "service charges",
 }
@@ -105,12 +107,18 @@ def _semantic_key(value: object) -> str:
     are treated as the same visual evidence item.
     """
 
+    # A service charge may name the component it services. Keep its
+    # documentary identity distinct from the physical repair for that region.
+    text = _item_text(value).lower()
+    if not text:
+        return ""
+    if not is_visually_verifiable(text):
+        return "non_visual:" + " ".join(text.split())
+
     regions = item_regions(value)
 
     if regions:
         return "|".join(sorted(regions))
-
-    text = _item_text(value).lower()
 
     removable_terms = (
         "replacement",

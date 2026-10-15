@@ -1,8 +1,12 @@
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 from time import perf_counter
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from app.graph.claims_graph import claim_graph
@@ -36,6 +40,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# PyMuPDF and first-use OCR initialization must never overlap. A dedicated
+# worker keeps extraction off the event loop and on one thread across claims.
+_document_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="claimpilot-documents")
+
+
+async def _run_document_operation(operation, *args):
+    return await asyncio.get_running_loop().run_in_executor(
+        _document_executor, partial(operation, *args)
+    )
 
 
 UPLOAD_DIR = Path("uploads")
@@ -101,7 +116,7 @@ async def process_claim(
             )
 
             start = perf_counter()
-            classification = classify_file(str(file_path))
+            classification = await _run_document_operation(classify_file, str(file_path))
 
             if classification["content_type"] in ("damage_photo", "unknown_image"):
                 image_files.append(
@@ -130,8 +145,8 @@ async def process_claim(
             # Phase 2A document intelligence
             # --------------------------------------------------
 
-            document_result = load_document(
-                str(file_path)
+            document_result = await _run_document_operation(
+                load_document, str(file_path)
             )
 
             extracted_text = (
@@ -267,7 +282,8 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
     # ------------------------------------------------------
 
     try:
-        result = claim_graph.invoke(
+        result = await run_in_threadpool(
+            claim_graph.invoke,
             {
                 "claim_id": claim_id,
                 "raw_documents": raw_documents,

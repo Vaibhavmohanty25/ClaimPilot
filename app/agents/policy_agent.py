@@ -140,8 +140,10 @@ def analyze_policy(claim_reconstruction: dict) -> dict:
 
     try:
         analysis = json.loads(cleaned)
+        if not isinstance(analysis, dict):
+            raise ValueError("Policy analysis must be a JSON object.")
 
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         analysis = {
             "coverage_status": "REQUIRES_REVIEW",
             "coverage_confidence": 0.0,

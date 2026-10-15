@@ -10,7 +10,7 @@ Deploy the React frontend and FastAPI backend as separate services. The reposito
 4. Add `VITE_API_BASE_URL=https://BACKEND_URL`, replacing the placeholder with the backend's public HTTPS origin and omitting a trailing slash.
 5. Deploy. `frontend/vercel.json` rewrites React Router paths to `index.html`.
 
-`VITE_API_BASE_URL` is embedded during the frontend build. Redeploy the frontend after changing it. Local development retains the existing `http://127.0.0.1:8000` fallback.
+Production builds now reject a missing, HTTP, or loopback `VITE_API_BASE_URL`. Use the actual public HTTPS backend URL; a Vercel frontend cannot reach a backend on the visitor's `127.0.0.1`. `VITE_API_BASE_URL` is embedded during the frontend build. Redeploy the frontend after changing it. Local development retains the existing `http://127.0.0.1:8000` fallback.
 
 ## Container backend
 
@@ -36,15 +36,29 @@ The optional live text retry settings are `CLAIMPILOT_TEXT_MAX_ATTEMPTS=4` and `
 
 ## Qdrant storage and policy data
 
-The current backend uses `QdrantClient(path=".qdrant")`. It does not read `QDRANT_URL` or `QDRANT_API_KEY`. A stateless container loses the policy collection, so attach persistent storage at `/app/.qdrant` (or `.qdrant` relative to a native host's working directory). Seed the `motor_policy` collection once, from the repository root, with:
+The backend uses `QdrantClient(path=".qdrant")`, one `motor_policy` collection and one active policy. Ingesting another policy replaces the active policy; insurer/policy selection is not implemented. `QDRANT_URL` and `QDRANT_API_KEY` are not read.
+
+The Docker build caches public embedding/OCR models and seeds `data/policies/motor_policy.txt` into the image in separate preparation processes. This needs build-time internet, but no Groq key. Fresh containers recover this bundled baseline even on ephemeral storage. Runtime Hugging Face access is offline.
+
+For native Python hosting, or a volume mounted over `.qdrant` (which hides the seeded image directory), initialize that storage before starting the backend:
 
 ```text
 python -m app.rag.ingest
 ```
 
-Run that command against the same mounted storage used by the running service, retain the volume across deployments, and use a single backend instance with the embedded Qdrant store. A remote Qdrant service requires a separate code change and migration of the policy collection; setting remote Qdrant variables alone has no effect.
+Stop the backend before ingestion: embedded Qdrant permits only one process to open its storage. Retain volumes across deployments and use a single backend instance. Remote Qdrant requires a code change. Uploaded files in `uploads/` disappear on ephemeral-host restarts; claim persistence remains a roadmap feature.
 
-The backend writes uploaded claim files to `uploads/`. Choose the host's persistent or temporary storage policy for that directory.
+## Render deployment
+
+`render.yaml` defines the Docker service `claimpilot-api`: free plan, manual deploys, `/` health check, `FRONTEND_ORIGIN=https://claimpilot-five.vercel.app`, and a prompt for runtime secret `GROQ_API_KEY`. Never put the key in Git or Docker build arguments.
+
+Create a Render Blueprint from the branch containing these changes. Provide the Groq key, deploy, and verify the root response and a synthetic scanned PDF claim. Set Vercel's `VITE_API_BASE_URL` to the resulting public HTTPS service URL, then rebuild the frontend.
+
+Free Render web services have 512 MB RAM. Full PyTorch/EasyOCR/SentenceTransformer processing can exceed that limit; health-check success alone does not prove scanned claims work. Use measured memory and a scanned-PDF test to select a suitable plan. A paid plan requires an approved budget.
+
+Free services sleep after 15 minutes without inbound traffic. Requests every 15 minutes match the requested cadence but can arrive after the idle boundary, so they cannot guarantee uninterrupted availability. Checks should send a cheap `GET /` to the verified backend URL. A successful deployment and its URL are required before activating a URL-specific schedule.
+
+References: [free limits](https://render.com/docs/free), [compute plans](https://render.com/docs/compute-plans), [Blueprint specification](https://render.com/docs/blueprint-spec).
 
 ## Connect both services
 

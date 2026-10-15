@@ -40,6 +40,7 @@ class ClaimState(TypedDict, total=False):
     claim_id: str
     raw_documents: str
     document_metadata: list
+    files_processed: list
     image_files: list
 
     claim_reconstruction: dict
@@ -58,6 +59,23 @@ class ClaimState(TypedDict, total=False):
     critic_feedback: dict
 
     final_assessment: dict
+
+
+def _document_grounding(state: ClaimState) -> dict:
+    """Visual-only uploads cannot establish that a document was parsed."""
+    metadata = state.get("document_metadata") or []
+    visual_names = {
+        item.get("filename") for item in metadata
+        if isinstance(item, dict) and (
+            item.get("extraction_method") == "vision_pending"
+            or item.get("content_type") in {"damage_photo", "unknown_image"}
+        )
+    }
+    files = state.get("files_processed")
+    return {
+        "files_processed": [name for name in files if name not in visual_names] if files is not None else None,
+        "document_metadata": [item for item in metadata if isinstance(item, dict) and item.get("filename") not in visual_names],
+    }
 
 
 @observed_node
@@ -108,6 +126,7 @@ def evidence_node(
     result = analyze_evidence(
         state["claim_reconstruction"],
         state["coverage_analysis"],
+        **_document_grounding(state),
     )
 
     return {
@@ -124,6 +143,7 @@ def missing_information_node(
         state["coverage_analysis"],
         state["evidence_analysis"],
         state.get("cross_modal_analysis"),
+        **_document_grounding(state),
     )
 
     return {
@@ -170,6 +190,7 @@ def critic_node(
         state["missing_information"],
         state["adjudication"],
         state.get("cross_modal_analysis"),
+        **_document_grounding(state),
     )
 
     return {

@@ -36,9 +36,12 @@ def reconstruct_claim(
     )
 
     try:
-        return json.loads(cleaned)
+        result = json.loads(cleaned)
+        if not isinstance(result, dict):
+            raise ValueError("Reconstruction must be a JSON object.")
+        return result
 
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         return {
             "error": "Claim Reconstruction Agent returned invalid JSON.",
             "raw_response": response,

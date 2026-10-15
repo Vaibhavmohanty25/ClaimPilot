@@ -908,7 +908,7 @@ ClaimPilot/
 ## 1. Clone
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
+git clone https://github.com/Vaibhavmohanty25/ClaimPilot.git
 cd ClaimPilot
 ```
 
@@ -918,8 +918,7 @@ Windows:
 
 ```powershell
 python -m venv venv
-.
-env\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1
 ```
 
 ## 3. Install backend dependencies
@@ -955,13 +954,24 @@ Do not commit `.env`.
 
 ---
 
+# Initialize the Policy RAG Store
+
+Before processing the first claim, seed the local policy collection from the repository root:
+
+```powershell
+.\venv\Scripts\python.exe -m app.rag.ingest
+```
+
+The first run downloads the `all-MiniLM-L6-v2` embedding model and needs internet access. OCR also downloads its model weights on first use. Ingestion and the backend use the same `.qdrant/` directory; stop the backend before ingestion because embedded Qdrant permits only one process to open its storage. Repeat ingestion after changing the bundled policy, then restart the backend. The collection holds one active policy; re-ingestion replaces previous sections.
+
+---
+
 # Run Backend
 
 From the repository root:
 
 ```powershell
-.
-env\Scripts\python.exe -m uvicorn app.main:app
+.\venv\Scripts\python.exe -m uvicorn app.main:app
 ```
 
 Backend:
@@ -1038,8 +1048,7 @@ For deployment, set `FRONTEND_ORIGIN` to the production frontend origin.
 Run the full offline suite:
 
 ```powershell
-.
-env\Scripts\python.exe -B -m unittest discover -s tests -v
+.\venv\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
 
 Phase 2.1 baseline:
