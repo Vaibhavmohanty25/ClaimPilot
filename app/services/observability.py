@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from functools import wraps
 from time import perf_counter
 from app.services.privacy import public_response
+from app.services.job_progress import report_progress
 
 claim_context = ContextVar("claim_id", default=None)
 logger = logging.getLogger("claimpilot")
@@ -29,6 +30,16 @@ def observed_node(function):
     @wraps(function)
     def wrapped(state):
         token = claim_context.set(state.get("claim_id"))
+        messages = {
+            "reconstruction_node": "Reconstructing the claim from supplied documents.",
+            "visual_node": "Reviewing supplied photographs.",
+            "policy_and_evidence_node": "Checking policy and document support.",
+            "compact_cross_modal_node": "Comparing documents and photographs.",
+            "missing_information_node": "Checking for missing information.",
+            "adjudication_node": "Preparing the claim assessment.",
+            "critic_node": "Verifying the final assessment.",
+        }
+        report_progress(function.__name__, messages.get(function.__name__, "Assessing the claim."))
         start = perf_counter()
         success = False
         try:

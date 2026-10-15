@@ -10,6 +10,7 @@ from groq import (
 )
 
 from app.services.observability import log_event
+from app.services.job_progress import report_progress
 
 
 class ProviderError(RuntimeError):
@@ -258,9 +259,13 @@ def request_with_retry(
                     f"Retrying in {delay} seconds..."
                 )
 
-            time.sleep(
-                delay
+            report_progress(
+                "provider_wait",
+                f"The AI service is busy. Retrying in {delay} seconds.",
+                retry_after_seconds=delay,
             )
+            time.sleep(delay)
+            report_progress(stage, "Continuing the claim assessment.")
 
         except (
             IndexError,

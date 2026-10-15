@@ -83,7 +83,7 @@ def merge_policy_contexts(*groups: list) -> list:
     return merged
 
 
-def analyze_policy(claim_reconstruction: dict) -> dict:
+def retrieve_claim_policy_context(claim_reconstruction: dict) -> list:
     # Delay local embedding-model initialization until a claim actually needs
     # policy retrieval. This keeps graph/API imports side-effect free.
     from app.rag.retriever import retrieve_policy_context
@@ -104,11 +104,14 @@ def analyze_policy(claim_reconstruction: dict) -> dict:
         limit=6,
     )
 
-    policy_context = merge_policy_contexts(
+    return merge_policy_contexts(
         deductible_context,
         coverage_context,
     )
 
+
+def analyze_policy(claim_reconstruction: dict) -> dict:
+    policy_context = retrieve_claim_policy_context(claim_reconstruction)
     prompt_template = load_prompt()
 
     prompt = (

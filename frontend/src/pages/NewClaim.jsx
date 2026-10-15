@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -11,14 +11,63 @@ import {
 
 import FileDropzone from "../components/claims/FileDropzone";
 import ProcessingState from "../components/claims/ProcessingState";
-import { processClaim } from "../api/claims";
+import { getActiveClaimJob, processClaim, resetClaimSubmission, resumeClaim } from "../api/claims";
 
 function NewClaim() {
   const navigate = useNavigate();
 
   const [files, setFiles] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(() => Boolean(getActiveClaimJob()));
+  const [progress, setProgress] = useState(null);
   const [error, setError] = useState("");
+  const requestRef = useRef(null);
+
+  const followClaim = useCallback(async (operation, controller) => {
+    setError("");
+    setIsProcessing(true);
+    try {
+      const claim = await operation({
+        signal: controller.signal,
+        onProgress: update => { if (!controller.signal.aborted) setProgress(update); },
+      });
+      if (!controller.signal.aborted) navigate("/claims/review", { state: { claim } });
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const detail = err.response?.data?.detail || err.response?.data?.message;
+      setError(typeof detail === "string" ? detail :
+        err.response ? "ClaimPilot could not accept this request. Please try again." :
+        err.message && !err.code ? err.message :
+        "Could not confirm your upload. Try again with the same files to safely check or continue this submission.");
+    } finally {
+      if (!controller.signal.aborted && requestRef.current === controller) {
+        requestRef.current = null;
+        setIsProcessing(false);
+      }
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // Defer until after StrictMode's trial effect has been cleaned up.
+    queueMicrotask(() => {
+      const jobId = getActiveClaimJob();
+      if (controller.signal.aborted || !jobId) return;
+      requestRef.current = controller;
+      followClaim(options => resumeClaim(jobId, options), controller);
+    });
+    return () => {
+      controller.abort();
+      requestRef.current?.abort();
+      requestRef.current = null;
+    };
+  }, [followClaim]);
+
+  function changeFiles(nextFiles) {
+    if (requestRef.current || isProcessing) return;
+    resetClaimSubmission(nextFiles);
+    setFiles(nextFiles);
+    setError("");
+  }
 
   const documentFiles = files.filter(
     (file) => !file.type.startsWith("image/")
@@ -30,50 +79,18 @@ function NewClaim() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (requestRef.current) return;
 
     if (files.length === 0) {
       setError("Please select at least one claim file.");
       return;
     }
 
-    setError("");
-    setIsProcessing(true);
-
-    try {
-      const claimResult = await processClaim(files);
-
-      navigate("/claims/review", {
-        state: {
-          claim: claimResult,
-        },
-      });
-    } catch (err) {
-      console.error("Claim processing failed:", err);
-
-      if (err.response) {
-        const backendMessage =
-          err.response?.data?.detail ||
-          err.response?.data?.message;
-
-        setError(
-          typeof backendMessage === "string"
-            ? backendMessage
-            : "The backend returned an error while processing the claim."
-        );
-      } else if (err.code === "ECONNABORTED") {
-        setError(
-          "Claim processing took too long. Please try again shortly."
-        );
-      } else {
-        setError(
-          "Could not connect to ClaimPilot. Please try again shortly."
-        );
-      }
-    } finally {
-      setIsProcessing(false);
-    }
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setProgress({ status: 'uploading', message: 'Uploading your claim evidence…' });
+    await followClaim(options => processClaim(files, options), controller);
   }
-
   return (
     <div className="mx-auto max-w-6xl">
       <button
@@ -119,7 +136,7 @@ function NewClaim() {
 
           <FileDropzone
             files={files}
-            onFilesChange={setFiles}
+            onFilesChange={changeFiles}
             disabled={isProcessing}
           />
 
@@ -171,7 +188,7 @@ function NewClaim() {
 
           {isProcessing && (
             <div className="mt-5">
-              <ProcessingState />
+              <ProcessingState progress={progress} />
             </div>
           )}
 

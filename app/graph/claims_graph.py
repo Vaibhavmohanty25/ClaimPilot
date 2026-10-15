@@ -14,6 +14,7 @@ from app.agents.claim_reconstruction import (
 from app.agents.policy_agent import (
     analyze_policy,
 )
+from app.agents.policy_evidence_agent import analyze_policy_and_evidence
 
 from app.agents.evidence_agent import (
     analyze_evidence,
@@ -109,6 +110,11 @@ def policy_node(
 
 
 @observed_node
+def policy_and_evidence_node(state: ClaimState):
+    return analyze_policy_and_evidence(state['claim_reconstruction'], **_document_grounding(state))
+
+
+@observed_node
 def visual_node(
     state: ClaimState,
 ):
@@ -163,6 +169,13 @@ def cross_modal_node(
         )
     }
 
+
+@observed_node
+def compact_cross_modal_node(state: ClaimState):
+    return {'cross_modal_analysis': analyze_cross_modal_evidence(
+        state['claim_reconstruction'], state['evidence_analysis'],
+        state.get('visual_analysis', {}), compact_prompt=True)}
+
 @observed_node
 def adjudication_node(
     state: ClaimState
@@ -199,7 +212,7 @@ def critic_node(
 
 
 
-def build_claim_graph():
+def build_claim_graph(optimized=False):
     builder = StateGraph(
         ClaimState
     )
@@ -211,7 +224,7 @@ def build_claim_graph():
 
     builder.add_node(
         "policy_reasoning",
-        policy_node,
+        policy_and_evidence_node if optimized else policy_node,
     )
 
     builder.add_node(
@@ -219,10 +232,8 @@ def build_claim_graph():
         visual_node,
     )
 
-    builder.add_node(
-        "evidence_analysis",
-        evidence_node,
-    )
+    if not optimized:
+        builder.add_node("evidence_analysis", evidence_node)
 
     builder.add_node(
         "missing_information",
@@ -244,19 +255,15 @@ def build_claim_graph():
         "policy_reasoning",
     )
 
-    builder.add_edge(
-        "policy_reasoning",
-        "evidence_analysis",
-    )
-
-    builder.add_edge(
-        "evidence_analysis",
-        "cross_modal_evidence",
-    )
+    if optimized:
+        builder.add_edge("policy_reasoning", "cross_modal_evidence")
+    else:
+        builder.add_edge("policy_reasoning", "evidence_analysis")
+        builder.add_edge("evidence_analysis", "cross_modal_evidence")
 
     builder.add_node(
         "cross_modal_evidence",
-        cross_modal_node,
+        compact_cross_modal_node if optimized else cross_modal_node,
     )
 
     builder.add_edge(
@@ -293,3 +300,4 @@ def build_claim_graph():
 
 
 claim_graph = build_claim_graph()
+optimized_claim_graph = build_claim_graph(optimized=True)

@@ -134,8 +134,10 @@ Current routes:
 The frontend submits files to:
 
 ```http
-POST /claims/process
+POST /claims/jobs
 ```
+
+It then polls `GET /claims/jobs/{job_id}` until the assessment is ready. The synchronous `POST /claims/process` endpoint remains available for existing API clients.
 
 using multipart form data:
 
@@ -764,6 +766,16 @@ Logged stages include:
 
 # API
 
+## Queued claim processing
+
+The frontend submits evidence with `POST /claims/jobs` and receives HTTP 202 with an opaque `job_id`. It polls `GET /claims/jobs/{job_id}` for the actual processing stage, queue position, elapsed time, provider retry waits, and final result or error. Individual network requests have a short timeout; the claim is not limited to the old three-minute browser request. The active job handle is kept in browser session storage so a reload can resume progress.
+
+One background worker processes claims at a time, sharing its lock with the legacy synchronous endpoint. This prevents simultaneous claims from competing for the same free Groq quota. `Idempotency-Key` lets a retry of the same submission recover its existing job; using that key for different evidence returns HTTP 409. There are at most five waiting jobs, ten files per submission, 20 MiB per file, and 40 MiB per bundle. A full queue returns HTTP 503 with a retry hint.
+
+Jobs and results are held in process memory for up to one hour, with a maximum of 100 terminal results. They are lost when the service restarts or redeploys; an unknown job returns HTTP 404 and the frontend asks for resubmission. This queue is designed for the current single-process, single-replica deployment. Multiple replicas require a shared durable queue and result store. Completed queued uploads are removed from temporary storage.
+
+Queued claims use one combined coverage/documentary-evidence call with the same retrieved policy context and deterministic grounding corrections. Duplicate per-image narratives are omitted from the cross-modal prompt; aggregate findings remain. The separate critic, missing-information assessment, visibility guards, and deterministic settlement arithmetic are preserved. The Groq model and plan are unchanged. Rate limits can still require waiting; the queue makes that wait visible rather than starting competing duplicate requests.
+
 ## Process Claim
 
 ```http
@@ -1221,9 +1233,7 @@ Before production use, consider adding:
 - authorization
 - audit logs
 - encrypted document storage
-- background jobs
-- asynchronous claim processing
-- claim status polling
+- durable shared job queue and result storage (the implemented queue is process-local)
 - remote Qdrant
 - reviewer persistence
 - reviewer override history
