@@ -36,7 +36,7 @@ def extract_text_from_image(
         paragraph=True,
         # CRAFT's default 2560-pixel canvas can exhaust a 1 GB CPU service.
         # Detection uses this bounded canvas; recognition keeps original crops.
-        canvas_size=768,
+        canvas_size=512,
     )
 
     return "\n".join(

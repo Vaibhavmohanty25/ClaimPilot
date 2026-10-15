@@ -62,11 +62,11 @@ function NewClaim() {
         );
       } else if (err.code === "ECONNABORTED") {
         setError(
-          "Claim processing timed out. Check the FastAPI logs and try again."
+          "Claim processing took too long. Please try again shortly."
         );
       } else {
         setError(
-          "Could not connect to the ClaimPilot backend. Make sure Uvicorn is running on port 8000."
+          "Could not connect to ClaimPilot. Please try again shortly."
         );
       }
     } finally {
