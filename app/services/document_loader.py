@@ -127,6 +127,11 @@ def load_pdf(
 
                     method = "ocr"
                     used_ocr = True
+                    # A short digital page may still contain useful evidence.
+                    # An empty OCR result must not erase its native text.
+                    if not page_text.strip() and native_text:
+                        page_text = native_text
+                        method = "native_text"
 
                 finally:
                     Path(
@@ -153,6 +158,7 @@ def load_pdf(
             f"{page['text']}"
         )
         for page in extracted_pages
+        if page["text"].strip()
     )
 
     content_type = (

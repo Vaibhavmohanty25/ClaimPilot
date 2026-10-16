@@ -359,6 +359,20 @@ function ClaimReview() {
             )}
           </Panel>
 
+          <Panel
+            title="Documentary Evidence"
+            subtitle="Support, contradictions and gaps in the submitted documents"
+            icon={FileText}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <EvidenceList title="Supported Items" items={evidence.supported_claim_items} variant="success" />
+              <EvidenceList title="Unsupported Items" items={evidence.unsupported_claim_items} variant="danger" />
+              <EvidenceList title="Contradictions" items={evidence.contradictions} variant="danger" />
+              <EvidenceList title="Missing Evidence" items={evidence.missing_evidence} variant="warning" />
+              <EvidenceList title="Risk Flags" items={evidence.risk_flags} variant="danger" />
+            </div>
+          </Panel>
+
           {/* Cross Modal */}
 
           <Panel
@@ -371,6 +385,18 @@ function ClaimReview() {
                 title="Supported"
                 items={crossModal.supported_items}
                 variant="success"
+              />
+
+              <EvidenceList
+                title="Partially Supported"
+                items={crossModal.partially_supported_items}
+                variant="warning"
+              />
+
+              <EvidenceList
+                title="Contradictions"
+                items={crossModal.cross_modal_contradictions}
+                variant="danger"
               />
 
               <EvidenceList

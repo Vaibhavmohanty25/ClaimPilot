@@ -27,6 +27,8 @@ def analyze_cross_modal_evidence(
     claim_reconstruction: dict,
     evidence_analysis: dict,
     visual_analysis: dict,
+    *,
+    compact_prompt: bool = False,
 ) -> dict:
     if not visual_analysis.get("images_analyzed"):
         result = no_visual_evidence_result()
@@ -41,7 +43,11 @@ def analyze_cross_modal_evidence(
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
     prompt = prompt.replace("{claim_reconstruction}", json.dumps(claim_reconstruction, indent=2))
     prompt = prompt.replace("{evidence_analysis}", json.dumps(evidence_analysis, indent=2))
-    prompt = prompt.replace("{visual_analysis}", json.dumps(visual_analysis, indent=2))
+    # Only the provider input is compacted. Per-image confidence and quality
+    # remain available to the deterministic visibility guard below.
+    visual_prompt = ({key: value for key, value in visual_analysis.items()
+                      if key != "image_observations"} if compact_prompt else visual_analysis)
+    prompt = prompt.replace("{visual_analysis}", json.dumps(visual_prompt, separators=(",", ":")))
     try:
         response = generate_text(prompt)
         result = json.loads(response.replace("```json", "").replace("```", "").strip())

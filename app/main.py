@@ -1,9 +1,15 @@
 import os
+import asyncio
+import hashlib
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 from time import perf_counter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 
 from app.graph.claims_graph import claim_graph
 from app.services.document_loader import load_document
@@ -11,9 +17,22 @@ from app.multimodal.file_classifier import classify_file
 from app.services.privacy import safe_filename as sanitize_filename, public_response
 from app.services.observability import log_event
 from app.services.vision_llm import MAX_VISION_IMAGES
+from app.services.claim_jobs import ClaimJobQueue, SavedUpload, cleanup_uploads
+from app.services.job_progress import report_progress
+
+
+@asynccontextmanager
+async def lifespan(application):
+    try:
+        yield
+    finally:
+        queue = getattr(application.state, "claim_jobs", None)
+        if queue is not None:
+            await queue.shutdown()
 
 
 app = FastAPI(
+    lifespan=lifespan,
     title="ClaimPilot",
     description=(
         "Agentic GenAI platform for insurance claim assessment "
@@ -38,6 +57,17 @@ app.add_middleware(
 )
 
 
+# PyMuPDF and first-use OCR initialization must never overlap. A dedicated
+# worker keeps extraction off the event loop and on one thread across claims.
+_document_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="claimpilot-documents")
+
+
+async def _run_document_operation(operation, *args):
+    return await _finish_background(asyncio.get_running_loop().run_in_executor(
+        _document_executor, partial(operation, *args)
+    ))
+
+
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(
     parents=True,
@@ -54,10 +84,7 @@ def root():
     }
 
 
-@app.post("/claims/process")
-async def process_claim(
-    files: list[UploadFile] = File(...)
-):
+async def _process_saved_files(files, *, optimized=False):
     if not files:
         raise HTTPException(
             status_code=400,
@@ -77,7 +104,6 @@ async def process_claim(
 
     for uploaded_file in files:
         if not uploaded_file.filename:
-            await uploaded_file.close()
             continue
 
         try:
@@ -88,20 +114,12 @@ async def process_claim(
                 safe_filename = f"{suffix}-{original_filename}"
                 suffix += 1
             used_filenames.add(safe_filename.casefold())
-            file_path = (
-                UPLOAD_DIR
-                / f"{claim_id}_{uuid4().hex[:8]}_{safe_filename}"
-            )
+            file_path = uploaded_file.path
             private_paths.extend([str(file_path), str(file_path.resolve()), file_path.name])
-
-            file_bytes = await uploaded_file.read()
-
-            file_path.write_bytes(
-                file_bytes
-            )
+            report_progress("extracting", f"Reading document {len(processed_files) + 1} of {len(files)}.")
 
             start = perf_counter()
-            classification = classify_file(str(file_path))
+            classification = await _run_document_operation(classify_file, str(file_path))
 
             if classification["content_type"] in ("damage_photo", "unknown_image"):
                 image_files.append(
@@ -130,8 +148,8 @@ async def process_claim(
             # Phase 2A document intelligence
             # --------------------------------------------------
 
-            document_result = load_document(
-                str(file_path)
+            document_result = await _run_document_operation(
+                load_document, str(file_path)
             )
 
             extracted_text = (
@@ -240,8 +258,6 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
                 ),
             )
 
-        finally:
-            await uploaded_file.close()
 
     if not document_sections and not image_files:
         raise HTTPException(
@@ -267,14 +283,15 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
     # ------------------------------------------------------
 
     try:
-        result = claim_graph.invoke(
+        result = await _finish_background(asyncio.ensure_future(run_in_threadpool(
+            _queued_graph_invoke if optimized else claim_graph.invoke,
             {
                 "claim_id": claim_id,
                 "raw_documents": raw_documents,
                 "document_metadata": document_metadata,
                 "image_files": image_files,
             }
-        )
+        )))
 
     except Exception:
         log_event("claim_processing", False, claim_id=claim_id, error_code="claim_processing_failed")
@@ -337,3 +354,127 @@ EXTRACTION METHOD: {document_result.get("extraction_method")}
             "critic_feedback"
         ),
     }, private_paths)
+
+
+MAX_FILES = 10
+MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_TOTAL_BYTES = 40 * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md", ".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+async def _finish_background(awaitable):
+    # Cancellation must not delete uploads or release the provider lock while
+    # a document/provider thread still uses them.
+    task = asyncio.ensure_future(awaitable)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        finally:
+            raise
+
+
+def _queued_graph_invoke(state):
+    from app.graph.claims_graph import optimized_claim_graph
+    return optimized_claim_graph.invoke(state)
+
+
+def _get_job_queue():
+    loop = asyncio.get_running_loop()
+    queue = getattr(app.state, "claim_jobs", None)
+    if queue is None or getattr(app.state, "claim_jobs_loop", None) is not loop:
+        async def process(files):
+            return await _process_saved_files(files, optimized=True)
+        queue = ClaimJobQueue(process)
+        app.state.claim_jobs = queue
+        app.state.claim_jobs_loop = loop
+    return queue
+
+
+async def _persist_uploads(files, *, validate_types=True):
+    saved = []
+    digest = hashlib.sha256()
+    total = 0
+    used_names = set()
+    try:
+        if not files or len(files) > MAX_FILES:
+            raise HTTPException(400, f"Upload between 1 and {MAX_FILES} files per claim.")
+        for upload in files:
+            if not upload.filename:
+                raise HTTPException(400, "Every uploaded file needs a filename.")
+            name = sanitize_filename(upload.filename)
+            if validate_types and Path(name).suffix.lower() not in ALLOWED_UPLOAD_EXTENSIONS:
+                raise HTTPException(400, "Unsupported file type. Upload PDF, text, or image documents.")
+            original = name
+            number = 2
+            while name.casefold() in used_names:
+                name = f"{number}-{original}"
+                number += 1
+            used_names.add(name.casefold())
+            path = UPLOAD_DIR / f"{uuid4().hex}_{name}"
+            saved.append(SavedUpload(name, path))
+            file_digest = hashlib.sha256()
+            length = 0
+            with path.open("wb") as target:
+                while True:
+                    # Tiny legacy in-process callers may implement read() only.
+                    read_once = False
+                    try:
+                        chunk = await upload.read(1024 * 1024)
+                    except TypeError:
+                        chunk = await upload.read()
+                        read_once = True
+                    if not chunk:
+                        break
+                    length += len(chunk)
+                    total += len(chunk)
+                    if length > MAX_FILE_BYTES or total > MAX_TOTAL_BYTES:
+                        raise HTTPException(413, "Upload limit exceeded: 20 MiB per file and 40 MiB per claim.")
+                    target.write(chunk)
+                    file_digest.update(chunk)
+                    if read_once:
+                        break
+            if not length:
+                raise HTTPException(400, "Uploaded files must not be empty.")
+            # Structured boundaries avoid ambiguity and include names/order as
+            # they affect graph document boundaries and public result metadata.
+            encoded_name = name.encode("utf-8")
+            digest.update(len(encoded_name).to_bytes(4, "big"))
+            digest.update(encoded_name)
+            digest.update(length.to_bytes(8, "big"))
+            digest.update(file_digest.digest())
+        return saved, digest.hexdigest()
+    except BaseException:
+        cleanup_uploads(saved)
+        raise
+    finally:
+        for upload in files:
+            await upload.close()
+
+
+@app.post("/claims/process")
+async def process_claim(files: list[UploadFile] = File(...)):
+    saved, _ = await _persist_uploads(files, validate_types=False)
+    try:
+        async with _get_job_queue().processing_lock:
+            return await _process_saved_files(saved)
+    except BaseException:
+        cleanup_uploads(saved)
+        raise
+
+
+@app.post("/claims/jobs", status_code=202)
+async def create_claim_job(files: list[UploadFile] = File(...),
+                           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if idempotency_key is not None and (not idempotency_key.strip() or len(idempotency_key) > 200):
+        for upload in files:
+            await upload.close()
+        raise HTTPException(400, "Idempotency-Key must contain between 1 and 200 characters.")
+    saved, fingerprint = await _persist_uploads(files)
+    return await _get_job_queue().submit(saved, fingerprint, idempotency_key)
+
+
+@app.get("/claims/jobs/{job_id}")
+async def get_claim_job(job_id: str):
+    return _get_job_queue().get(job_id)

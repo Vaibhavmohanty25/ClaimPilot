@@ -11,6 +11,11 @@ def retrieve_policy_context(
     limit: int = 4,
 ) -> list[dict]:
 
+    if not qdrant_client.collection_exists(COLLECTION_NAME):
+        raise RuntimeError(
+            "Policy index is missing. Run python -m app.rag.ingest before processing claims."
+        )
+
     query_vector = embed_text(
         query
     )

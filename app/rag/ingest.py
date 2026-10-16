@@ -1,9 +1,12 @@
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client.models import (
     Distance,
     VectorParams,
     PointStruct,
+    Filter,
+    HasIdCondition,
 )
 
 from app.rag.embeddings import embed_text
@@ -81,8 +84,6 @@ def ingest_policy(
         f"Reading policy from: {file_path}"
     )
 
-    create_collection()
-
     policy_text = Path(
         file_path
     ).read_text(
@@ -92,6 +93,10 @@ def ingest_policy(
     sections = split_policy_into_sections(
         policy_text
     )
+    if not sections:
+        raise ValueError("Policy must contain at least one SECTION header.")
+
+    source_key = str(Path(file_path).resolve())
 
     print(
         f"Found {len(sections)} policy sections."
@@ -112,9 +117,9 @@ def ingest_policy(
         )
 
         point = PointStruct(
-            # Deterministic ID so re-ingestion
-            # does not create duplicates.
-            id=index,
+            # Stable source-specific IDs support replacing the active policy
+            # only after its complete replacement has been embedded.
+            id=str(uuid5(NAMESPACE_URL, f"{source_key}#{index}")),
 
             vector=vector,
 
@@ -128,9 +133,23 @@ def ingest_policy(
             point
         )
 
+    # Complete extraction and embedding before changing the index.
+    create_collection()
     qdrant_client.upsert(
         collection_name=COLLECTION_NAME,
         points=points,
+        wait=True,
+    )
+
+    # The application has one active policy and retrieval is not source-scoped.
+    # Remove all previous policy sections, including legacy numeric-ID points,
+    # so unrelated or obsolete clauses cannot enter coverage analysis.
+    qdrant_client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=Filter(
+            must_not=[HasIdCondition(has_id=[point.id for point in points])],
+        ),
+        wait=True,
     )
 
     print(

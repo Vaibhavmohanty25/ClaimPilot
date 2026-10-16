@@ -145,26 +145,6 @@ def _repair_estimate_has_labour(
     return False
 
 
-def _flatten_text(
-    value: object,
-) -> str:
-    if isinstance(value, dict):
-        return " ".join(
-            _flatten_text(item)
-            for item in value.values()
-        )
-
-    if isinstance(value, list):
-        return " ".join(
-            _flatten_text(item)
-            for item in value
-        )
-
-    return str(
-        value
-    )
-
-
 def _contains_false_missing_estimate_claim(
     evidence_analysis: dict,
     missing_information: dict,
@@ -173,35 +153,10 @@ def _contains_false_missing_estimate_claim(
     if not has_repair_estimate:
         return False
 
-    text = (
-        _flatten_text(
-            evidence_analysis
-        )
-        + " "
-        + _flatten_text(
-            missing_information
-        )
-    ).lower()
-
-    estimate_reference = (
-        "repair estimate" in text
-        or "repair_estimate" in text
-    )
-
-    missing_language = any(
-        phrase in text
-        for phrase in (
-            "missing",
-            "not provided",
-            "not supplied",
-            "absent",
-            "unavailable",
-        )
-    )
-
-    return (
-        estimate_reference
-        and missing_language
+    return _contains_missing_document_claim(
+        evidence_analysis,
+        missing_information,
+        ("repair estimate", "repair_estimate"),
     )
 
 
@@ -213,36 +168,44 @@ def _contains_false_missing_police_report_claim(
     if not has_police_report:
         return False
 
-    text = (
-        _flatten_text(
-            evidence_analysis
-        )
-        + " "
-        + _flatten_text(
-            missing_information
-        )
-    ).lower()
-
-    report_reference = (
-        "police report" in text
-        or "police_report" in text
+    return _contains_missing_document_claim(
+        evidence_analysis,
+        missing_information,
+        ("police report", "police_report"),
     )
 
-    missing_language = any(
-        phrase in text
-        for phrase in (
-            "missing",
-            "not provided",
-            "not supplied",
-            "absent",
-            "unavailable",
-        )
-    )
 
-    return (
-        report_reference
-        and missing_language
-    )
+def _statement_texts(value: object):
+    """Keep separate findings separate while retaining structured item reasons."""
+    if isinstance(value, dict):
+        scalar_fields = []
+        for item in value.values():
+            if isinstance(item, (dict, list)):
+                yield from _statement_texts(item)
+            else:
+                scalar_fields.append(str(item))
+        if scalar_fields:
+            yield " ".join(scalar_fields).lower()
+    elif isinstance(value, list):
+        for item in value:
+            yield from _statement_texts(item)
+    else:
+        yield str(value).lower()
+
+
+def _contains_missing_document_claim(evidence_analysis, missing_information, references):
+    missing_phrases = ("missing", "not provided", "not supplied", "absent", "unavailable")
+    for analysis in (evidence_analysis, missing_information):
+        # Membership in a missing-document bucket already asserts absence.
+        for bucket in ("missing_documents", "missing_evidence"):
+            if any(any(reference in text for reference in references)
+                   for text in _statement_texts(analysis.get(bucket, []))):
+                return True
+        for text in _statement_texts(analysis):
+            if (any(reference in text for reference in references)
+                    and any(phrase in text for phrase in missing_phrases)):
+                return True
+    return False
 
 
 def _contains_false_visual_labour_claim(
@@ -253,48 +216,18 @@ def _contains_false_visual_labour_claim(
     if not labour_documented:
         return False
 
-    text = (
-        _flatten_text(
-            evidence_analysis
-        )
-        + " "
-        + _flatten_text(
-            cross_modal_analysis
-        )
-    ).lower()
-
-    labour_reference = (
-        "labour" in text
-        or "labor" in text
-    )
-
-    visual_language = any(
-        phrase in text
-        for phrase in (
-            "no photo",
-            "no photograph",
-            "no visual",
-            "visual evidence",
-            "visually unsupported",
-            "not visible",
-        )
-    )
-
-    unsupported_language = any(
-        phrase in text
-        for phrase in (
-            "unsupported",
-            "unverified",
-            "unverifiable",
-            "not supported",
-        )
-    )
-
-    return (
-        labour_reference
-        and visual_language
-        and unsupported_language
-    )
+    for text in _statement_texts([evidence_analysis, cross_modal_analysis]):
+        labour_reference = "labour" in text or "labor" in text
+        visual_language = any(phrase in text for phrase in (
+            "no photo", "no photograph", "no visual", "visual evidence",
+            "visually unsupported", "not visible",
+        ))
+        unsupported_language = any(phrase in text for phrase in (
+            "unsupported", "unverified", "unverifiable", "not supported",
+        ))
+        if labour_reference and visual_language and unsupported_language:
+            return True
+    return False
 
 
 def _claim_is_blocked(
