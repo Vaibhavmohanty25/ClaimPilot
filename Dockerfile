@@ -10,10 +10,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OPENBLAS_NUM_THREADS=1 \
     MKL_NUM_THREADS=1
 
+# Tesseract avoids keeping a second neural model beside the embedding model on
+# small CPU hosts. EasyOCR remains available for existing local installations.
+ENV CLAIMPILOT_OCR_ENGINE=tesseract
+
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 \
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

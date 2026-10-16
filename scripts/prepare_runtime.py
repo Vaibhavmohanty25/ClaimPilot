@@ -5,6 +5,7 @@ No Groq API key is required. Fail the build if any preparation stage fails.
 """
 
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -21,6 +22,15 @@ def prepare_embeddings():
 
 
 def prepare_ocr():
+    if os.getenv('CLAIMPILOT_OCR_ENGINE', 'easyocr').strip().lower() == 'tesseract':
+        from app.services.ocr_service import extract_text_from_image
+        from app.services.document_loader import load_pdf
+        image_text = extract_text_from_image('data/ocr_test/police_report.png')
+        scan_text = load_pdf('data/ocr_test/police_report_scan.pdf')['text']
+        if 'POLICE' not in image_text.upper() or 'POLICE' not in scan_text.upper():
+            raise RuntimeError('Tesseract could not read the bundled image/PDF OCR fixtures.')
+        print('Tesseract verified on bundled document image and scanned PDF.', flush=True)
+        return
     from app.services.ocr_service import get_reader
 
     get_reader()

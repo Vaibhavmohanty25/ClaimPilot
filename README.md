@@ -774,6 +774,8 @@ One background worker processes claims at a time, sharing its lock with the lega
 
 Jobs and results are held in process memory for up to one hour, with a maximum of 100 terminal results. They are lost when the service restarts or redeploys; an unknown job returns HTTP 404 and the frontend asks for resubmission. This queue is designed for the current single-process, single-replica deployment. Multiple replicas require a shared durable queue and result store. Completed queued uploads are removed from temporary storage.
 
+The Docker deployment uses English Tesseract OCR (`CLAIMPILOT_OCR_ENGINE=tesseract`) to keep scanned-document memory low alongside the embedding model. Its image build verifies both bundled OCR fixtures. Existing local installations default to EasyOCR; that model is loaded only when requested. The configured Tesseract engine fails explicitly if missing or if a page exceeds its 60-second OCR timeout, rather than loading a memory-heavy fallback.
+
 Queued claims use one combined coverage/documentary-evidence call with the same retrieved policy context and deterministic grounding corrections. Duplicate per-image narratives are omitted from the cross-modal prompt; aggregate findings remain. The separate critic, missing-information assessment, visibility guards, and deterministic settlement arithmetic are preserved. The Groq model and plan are unchanged. Rate limits can still require waiting; the queue makes that wait visible rather than starting competing duplicate requests.
 
 ## Process Claim
